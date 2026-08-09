@@ -37,8 +37,10 @@ dependencies {
     implementation(project(":shared"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.kotlinx.coroutines.core)
     implementation(compose.material3)
     implementation(compose.ui)
     implementation(compose.runtime)
+    implementation(compose.foundation)
     debugImplementation(compose.uiTooling)
 }
