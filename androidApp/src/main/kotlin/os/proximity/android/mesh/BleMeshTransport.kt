@@ -74,16 +74,19 @@ class BleMeshTransport(context: Context) : MeshTransport {
     private var scanCallback: ScanCallback? = null
     private var advertiseCallback: AdvertiseCallback? = null
 
-    init {
-        startGattServer()
-    }
-
     override fun startDiscovery() {
         val bleScanner = adapter?.bluetoothLeScanner
         val advertiser = adapter?.bluetoothLeAdvertiser
         if (bleScanner == null || advertiser == null) {
             Log.w(TAG, "Bluetooth LE not available; cannot start discovery")
             return
+        }
+
+        // Deferred until here (rather than in an init block) because opening a
+        // GATT server requires BLUETOOTH_CONNECT, which the caller may not have
+        // been granted yet at construction time.
+        if (gattServer == null) {
+            startGattServer()
         }
 
         val filter = ScanFilter.Builder()
