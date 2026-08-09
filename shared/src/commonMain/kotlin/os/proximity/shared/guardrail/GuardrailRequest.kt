@@ -21,6 +21,8 @@ enum class RequestDirection {
  */
 @Serializable
 enum class ActionType {
+    DISCOVER_PEER,
+    CONNECT_PEER,
     RECEIVE_FILE,
     SEND_FILE,
     RECEIVE_MESSAGE,
