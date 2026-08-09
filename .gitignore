@@ -1,0 +1,40 @@
+
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Kotlin
+*.class
+
+# Android
+*.apk
+*.aab
+*.ap_
+*.dex
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.DS_Store
+
+# Compose Multiplatform / KMP
+.kotlin/
+
+# Logs
+*.log
+
+# SQLDelight generated
+**/generated/
+
+# Secrets
+*.jks
+*.keystore
+google-services.json
