@@ -33,6 +33,41 @@ fun String.hexToBytesOrNull(): ByteArray? {
 fun ByteArray.toFingerprint(groups: Int = 3, groupSize: Int = 4): String =
     toHex().uppercase().take(groups * groupSize).chunked(groupSize).joinToString("-")
 
+internal fun ByteArray.writeIntAt(offset: Int, value: Int) {
+    this[offset] = (value ushr 24).toByte()
+    this[offset + 1] = (value ushr 16).toByte()
+    this[offset + 2] = (value ushr 8).toByte()
+    this[offset + 3] = value.toByte()
+}
+
+internal fun ByteArray.writeShortAt(offset: Int, value: Int) {
+    this[offset] = (value ushr 8).toByte()
+    this[offset + 1] = value.toByte()
+}
+
+internal fun ByteArray.readIntAt(offset: Int): Int =
+    ((this[offset].toInt() and 0xFF) shl 24) or
+        ((this[offset + 1].toInt() and 0xFF) shl 16) or
+        ((this[offset + 2].toInt() and 0xFF) shl 8) or
+        (this[offset + 3].toInt() and 0xFF)
+
+internal fun ByteArray.readShortAt(offset: Int): Int =
+    ((this[offset].toInt() and 0xFF) shl 8) or (this[offset + 1].toInt() and 0xFF)
+
+internal fun ByteArray.writeLongAt(offset: Int, value: Long) {
+    for (i in 0 until 8) {
+        this[offset + i] = (value ushr (56 - i * 8)).toByte()
+    }
+}
+
+internal fun ByteArray.readLongAt(offset: Int): Long {
+    var result = 0L
+    for (i in 0 until 8) {
+        result = (result shl 8) or (this[offset + i].toLong() and 0xFF)
+    }
+    return result
+}
+
 /**
  * Constant-time comparison. Used anywhere a mismatch could otherwise leak
  * position information through timing.

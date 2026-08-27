@@ -1,5 +1,10 @@
 package os.proximity.shared.protocol
 
+import os.proximity.shared.util.readIntAt
+import os.proximity.shared.util.readShortAt
+import os.proximity.shared.util.writeIntAt
+import os.proximity.shared.util.writeShortAt
+
 /**
  * The on-wire framing format.
  *
@@ -111,23 +116,3 @@ enum class FrameType(val wireValue: Int) {
     }
 }
 
-internal fun ByteArray.writeIntAt(offset: Int, value: Int) {
-    this[offset] = (value ushr 24).toByte()
-    this[offset + 1] = (value ushr 16).toByte()
-    this[offset + 2] = (value ushr 8).toByte()
-    this[offset + 3] = value.toByte()
-}
-
-internal fun ByteArray.writeShortAt(offset: Int, value: Int) {
-    this[offset] = (value ushr 8).toByte()
-    this[offset + 1] = value.toByte()
-}
-
-internal fun ByteArray.readIntAt(offset: Int): Int =
-    ((this[offset].toInt() and 0xFF) shl 24) or
-        ((this[offset + 1].toInt() and 0xFF) shl 16) or
-        ((this[offset + 2].toInt() and 0xFF) shl 8) or
-        (this[offset + 3].toInt() and 0xFF)
-
-internal fun ByteArray.readShortAt(offset: Int): Int =
-    ((this[offset].toInt() and 0xFF) shl 8) or (this[offset + 1].toInt() and 0xFF)

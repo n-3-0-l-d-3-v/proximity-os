@@ -1,5 +1,6 @@
 package os.proximity.shared.protocol
 
+import os.proximity.shared.util.writeShortAt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
