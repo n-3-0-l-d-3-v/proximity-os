@@ -24,6 +24,7 @@ import os.proximity.shared.guardrail.GuardrailEngine
 import os.proximity.shared.guardrail.GuardrailRequest
 import os.proximity.shared.guardrail.PeerContext
 import os.proximity.shared.guardrail.RequestDirection
+import os.proximity.shared.guardrail.TrustState
 import os.proximity.shared.identity.DeviceIdentityProvider
 import os.proximity.shared.identity.SignatureVerifier
 import os.proximity.shared.identity.TrustStore
@@ -174,11 +175,22 @@ class MeshManager(
      */
     suspend fun connectTo(address: String): Boolean {
         val peer = peersState.value.firstOrNull { it.transportAddress == address }
+
+        // Trust is keyed by cryptographic device ID, never by transport
+        // address — a BLE address is not an identity and is trivially
+        // changed. If we have not yet learned this peer's device ID, it is a
+        // stranger by definition.
+        val knownDeviceId = peer?.deviceId
         val decision = guardrail.evaluate(
             GuardrailRequest(
                 direction = RequestDirection.OUTBOUND,
                 actionType = ActionType.CONNECT_PEER,
-                peer = PeerContext(address, peer?.trustState ?: trustStore.trustStateOf(address))
+                peer = PeerContext(
+                    deviceId = knownDeviceId ?: address,
+                    trustState = knownDeviceId
+                        ?.let { trustStore.trustStateOf(it) }
+                        ?: TrustState.UNVERIFIED
+                )
             )
         )
 
@@ -390,11 +402,17 @@ class MeshManager(
         }
 
         // Inbound connection: policy decides whether we answer at all.
+        //
+        // The greeting *claims* an identity, but its signature has not been
+        // checked yet. Treating that claim as trusted here would let anyone
+        // skip the prompt by asserting a verified peer's public key, so an
+        // inbound peer is always UNVERIFIED at this point. Trust is applied
+        // only after the handshake proves key ownership.
         val decision = guardrail.evaluate(
             GuardrailRequest(
                 direction = RequestDirection.INBOUND,
                 actionType = ActionType.CONNECT_PEER,
-                peer = PeerContext(context.address, trustStore.trustStateOf(context.address))
+                peer = PeerContext(context.address, TrustState.UNVERIFIED)
             )
         )
 
