@@ -3,6 +3,7 @@ package os.proximity.android.data
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import os.proximity.shared.guardrail.PolicyCatalog
 
 /**
  * Local, on-device preferences. Nothing here leaves the device.
@@ -35,10 +36,30 @@ class AppSettings(context: Context) {
         onboardedState.value = value
     }
 
+    private val enabledPoliciesState = MutableStateFlow(
+        // A missing key means first run — fall back to the catalog's defaults
+        // rather than to "nothing enabled", which would silently drop the
+        // protections the user is entitled to expect.
+        prefs.getStringSet(KEY_ENABLED_POLICIES, null)
+            ?: PolicyCatalog.defaultEnabledIds
+    )
+    val enabledPolicyIds: StateFlow<Set<String>> = enabledPoliciesState
+
+    fun setPolicyEnabled(id: String, enabled: Boolean) {
+        val updated = if (enabled) {
+            enabledPoliciesState.value + id
+        } else {
+            enabledPoliciesState.value - id
+        }
+        prefs.edit().putStringSet(KEY_ENABLED_POLICIES, updated).apply()
+        enabledPoliciesState.value = updated
+    }
+
     companion object {
         private const val FILE_NAME = "proximity_os_settings"
         private const val KEY_DISPLAY_NAME = "display_name"
         private const val KEY_ONBOARDED = "has_onboarded"
+        private const val KEY_ENABLED_POLICIES = "enabled_policies"
         private const val DEFAULT_DISPLAY_NAME = "Someone nearby"
         const val MAX_NAME_LENGTH = 24
     }
