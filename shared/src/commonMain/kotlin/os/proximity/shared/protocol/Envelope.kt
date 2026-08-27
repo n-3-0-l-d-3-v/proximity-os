@@ -1,0 +1,113 @@
+package os.proximity.shared.protocol
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+
+/**
+ * Application-level messages, carried inside an encrypted [FrameType.SEALED]
+ * frame once a session is established (handshake envelopes excepted).
+ *
+ * Envelopes are deserialized from attacker-controlled bytes, so
+ * [EnvelopeCodec.decode] never throws — a malformed envelope is a null, not
+ * a crash.
+ */
+@Serializable
+sealed class Envelope {
+
+    /**
+     * First message of the handshake. Sent unencrypted; the signature binds
+     * the ephemeral key to the sender's long-term identity so an observer
+     * cannot substitute their own ephemeral key (see docs/THREAT_MODEL.md
+     * #2 Capability spoofing).
+     */
+    @Serializable
+    @SerialName("hello")
+    data class Hello(
+        val identityPublicKey: String,
+        val ephemeralPublicKey: String,
+        val nonce: String,
+        val signature: String,
+        val displayName: String,
+        val protocolVersion: Int = PROTOCOL_VERSION
+    ) : Envelope()
+
+    /** Response to [Hello], same construction. */
+    @Serializable
+    @SerialName("hello_ack")
+    data class HelloAck(
+        val identityPublicKey: String,
+        val ephemeralPublicKey: String,
+        val nonce: String,
+        val signature: String,
+        val displayName: String,
+        val protocolVersion: Int = PROTOCOL_VERSION
+    ) : Envelope()
+
+    /** A chat message in a pairwise conversation. */
+    @Serializable
+    @SerialName("chat")
+    data class Chat(
+        val messageId: String,
+        val sentAtEpochMillis: Long,
+        val body: String
+    ) : Envelope()
+
+    /** Delivery confirmation for a previously sent [Chat]. */
+    @Serializable
+    @SerialName("ack")
+    data class Ack(
+        val messageId: String
+    ) : Envelope()
+
+    /**
+     * An operation on a shared list. Modelled as an operation rather than a
+     * snapshot so two devices that edited while apart can merge instead of
+     * clobbering each other.
+     */
+    @Serializable
+    @SerialName("list_op")
+    data class ListOp(
+        val listId: String,
+        val opId: String,
+        val kind: Kind,
+        val itemId: String,
+        val text: String? = null,
+        val done: Boolean? = null,
+        val atEpochMillis: Long
+    ) : Envelope() {
+        @Serializable
+        enum class Kind { ADD, SET_TEXT, SET_DONE, REMOVE }
+    }
+
+    /** A short-lived capability this device is offering to the mesh. */
+    @Serializable
+    @SerialName("capability")
+    data class CapabilityAdvert(
+        val capability: String,
+        val expiresAtEpochMillis: Long
+    ) : Envelope()
+
+    companion object {
+        const val PROTOCOL_VERSION = 1
+    }
+}
+
+object EnvelopeCodec {
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        classDiscriminator = "t"
+        encodeDefaults = true
+    }
+
+    fun encode(envelope: Envelope): ByteArray =
+        json.encodeToString(Envelope.serializer(), envelope).encodeToByteArray()
+
+    /** Returns null for anything that isn't a valid envelope. */
+    fun decode(bytes: ByteArray): Envelope? = try {
+        json.decodeFromString(Envelope.serializer(), bytes.decodeToString())
+    } catch (e: Exception) {
+        null
+    }
+}
