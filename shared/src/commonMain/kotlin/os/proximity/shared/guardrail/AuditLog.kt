@@ -1,11 +1,12 @@
 package os.proximity.shared.guardrail
 
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
 
 /**
- * A single, immutable audit log entry. The audit log is append-only and
- * local — it is never transmitted off-device by default (doing so would
- * itself be a [GuardrailRequest]).
+ * A single, immutable audit log entry. The log is append-only and local —
+ * it is never transmitted off-device by default, because doing so would
+ * itself be a [GuardrailRequest].
  */
 @Serializable
 data class AuditLogEntry(
@@ -20,6 +21,9 @@ data class AuditLogEntry(
 
 /** Append-only local store for [AuditLogEntry] records. */
 interface AuditLog {
+
+    /** Newest first, so the UI can render without re-sorting. */
+    val entries: StateFlow<List<AuditLogEntry>>
 
     suspend fun append(entry: AuditLogEntry)
 
