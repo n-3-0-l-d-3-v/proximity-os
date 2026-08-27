@@ -35,5 +35,20 @@ interface MeshTransport {
 
     suspend fun connect(peerAddress: String): Boolean
 
+    fun disconnect(peerAddress: String)
+
+    /**
+     * Largest single write this peer's link will accept, after any MTU
+     * negotiation. Callers must chunk to this size — on BLE it can be as
+     * small as 20 bytes.
+     */
+    fun maxPayloadSize(peerAddress: String): Int
+
+    /**
+     * Sends one already-chunked payload, suspending until the link reports
+     * the write completed. Implementations must serialise writes per peer:
+     * BLE allows only one outstanding write per connection, and issuing the
+     * next before the previous completes silently drops it.
+     */
     suspend fun send(peerAddress: String, payload: ByteArray): Boolean
 }
