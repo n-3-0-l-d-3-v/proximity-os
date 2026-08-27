@@ -46,7 +46,7 @@ import os.proximity.shared.guardrail.InMemoryAuditLog
 import os.proximity.shared.guardrail.PeerContext
 import os.proximity.shared.guardrail.RequestDirection
 import os.proximity.shared.guardrail.TrustState
-import os.proximity.shared.identity.AndroidDeviceIdentityProvider
+import os.proximity.shared.identity.KeystoreDeviceIdentityProvider
 import os.proximity.shared.mesh.DiscoveredPeer
 
 class MainActivity : ComponentActivity() {
@@ -54,12 +54,12 @@ class MainActivity : ComponentActivity() {
     private val auditLog = InMemoryAuditLog()
     private val guardrailEngine = DefaultGuardrailEngine(auditLog)
     private lateinit var transport: BleMeshTransport
-    private lateinit var identityProvider: AndroidDeviceIdentityProvider
+    private lateinit var identityProvider: KeystoreDeviceIdentityProvider
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         transport = BleMeshTransport(applicationContext)
-        identityProvider = AndroidDeviceIdentityProvider(applicationContext)
+        identityProvider = KeystoreDeviceIdentityProvider()
 
         setContent {
             ProximityOsApp(

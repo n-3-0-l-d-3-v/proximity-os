@@ -40,7 +40,9 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(libs.sqldelight.android.driver)
-            implementation(libs.tink.android)
+        }
+        androidUnitTest.dependencies {
+            implementation(kotlin("test"))
         }
         iosMain.dependencies {
             implementation(libs.sqldelight.native.driver)
