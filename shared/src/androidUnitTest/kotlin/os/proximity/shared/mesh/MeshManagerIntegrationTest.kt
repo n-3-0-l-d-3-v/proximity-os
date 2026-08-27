@@ -1,0 +1,343 @@
+package os.proximity.shared.mesh
+
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import os.proximity.shared.crypto.AndroidCryptoPrimitives
+import os.proximity.shared.domain.DeliveryState
+import os.proximity.shared.domain.LinkState
+import os.proximity.shared.domain.MessageDirection
+import os.proximity.shared.guardrail.ActionType
+import os.proximity.shared.guardrail.DefaultGuardrailEngine
+import os.proximity.shared.guardrail.GuardrailDecision
+import os.proximity.shared.guardrail.InMemoryAuditLog
+import os.proximity.shared.guardrail.PolicyRule
+import os.proximity.shared.identity.DeviceIdentifiers
+import os.proximity.shared.identity.DeviceIdentity
+import os.proximity.shared.identity.DeviceIdentityProvider
+import os.proximity.shared.identity.InMemoryTrustStore
+import os.proximity.shared.identity.JcaSignatureVerifier
+import java.security.KeyPair
+import java.security.KeyPairGenerator
+import java.security.MessageDigest
+import java.security.Signature
+import java.security.spec.ECGenParameterSpec
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+/**
+ * Two [MeshManager]s connected by an in-memory transport.
+ *
+ * This exercises the real chain — policy → handshake → key agreement →
+ * framing → encryption → reassembly → decryption — with only the radio
+ * replaced. The fake MTU is deliberately tiny so every message is chunked,
+ * which is where framing bugs actually surface.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class MeshManagerIntegrationTest {
+
+    private val primitives = AndroidCryptoPrimitives()
+    private val verifier = JcaSignatureVerifier()
+
+    /** Delivers writes straight into the paired transport's inbox. */
+    private class LoopbackTransport(private val selfAddress: String) : MeshTransport {
+
+        var peer: LoopbackTransport? = null
+        var payloadSize: Int = 60
+
+        private val inbox = MutableSharedFlow<IncomingMessage>(extraBufferCapacity = 4096)
+        private val peersState = MutableStateFlow<List<DiscoveredPeer>>(emptyList())
+
+        override val discoveredPeers: Flow<List<DiscoveredPeer>> = peersState
+        override val incomingMessages: Flow<IncomingMessage> = inbox
+
+        override fun startDiscovery() {
+            peersState.value = listOf(
+                DiscoveredPeer(peer!!.selfAddress, null, -50, 1_000)
+            )
+        }
+
+        override fun stopDiscovery() {
+            peersState.value = emptyList()
+        }
+
+        override suspend fun connect(peerAddress: String): Boolean = true
+
+        override fun disconnect(peerAddress: String) = Unit
+
+        override fun maxPayloadSize(peerAddress: String): Int = payloadSize
+
+        override suspend fun send(peerAddress: String, payload: ByteArray): Boolean {
+            val target = peer ?: return false
+            target.inbox.emit(IncomingMessage(selfAddress, payload))
+            return true
+        }
+    }
+
+    private class TestIdentity(keyPair: KeyPair) : DeviceIdentity {
+        private val privateKey = keyPair.private
+        override val publicKeyBytes: ByteArray = keyPair.public.encoded
+        private val hash = MessageDigest.getInstance("SHA-256").digest(publicKeyBytes)
+        override val deviceId: String = DeviceIdentifiers.deviceIdFrom(hash)
+        override val fingerprint: String = DeviceIdentifiers.fingerprintFrom(hash)
+        override fun sign(data: ByteArray): ByteArray =
+            Signature.getInstance("SHA256withECDSA").run {
+                initSign(privateKey)
+                update(data)
+                sign()
+            }
+    }
+
+    private fun identityProvider(): DeviceIdentityProvider {
+        val generator = KeyPairGenerator.getInstance("EC")
+        generator.initialize(ECGenParameterSpec("secp256r1"))
+        val identity = TestIdentity(generator.generateKeyPair())
+        return object : DeviceIdentityProvider {
+            override suspend fun getOrCreateIdentity(): DeviceIdentity = identity
+        }
+    }
+
+    private fun allowConnectRule() = PolicyRule(
+        id = "test-allow-connect",
+        description = "Allow connections without prompting",
+        priority = 100,
+        matches = { it.actionType == ActionType.CONNECT_PEER },
+        decide = { GuardrailDecision.Allow("Allowed by test policy.") }
+    )
+
+    private class Node(
+        val manager: MeshManager,
+        val transport: LoopbackTransport,
+        val engine: DefaultGuardrailEngine,
+        val auditLog: InMemoryAuditLog,
+        val name: String
+    )
+
+    private fun node(name: String, address: String, scope: CoroutineScope): Node {
+        val transport = LoopbackTransport(address)
+        val auditLog = InMemoryAuditLog()
+        val engine = DefaultGuardrailEngine(auditLog)
+        val manager = MeshManager(
+            transport = transport,
+            primitives = primitives,
+            identityProvider = identityProvider(),
+            verifier = verifier,
+            guardrail = engine,
+            trustStore = InMemoryTrustStore(),
+            scope = scope,
+            displayName = { name }
+        )
+        return Node(manager, transport, engine, auditLog, name)
+    }
+
+    private fun pair(scope: CoroutineScope): Pair<Node, Node> {
+        val alice = node("Alice", "AA:AA:AA:AA:AA:AA", scope)
+        val bob = node("Bob", "BB:BB:BB:BB:BB:BB", scope)
+        alice.transport.peer = bob.transport
+        bob.transport.peer = alice.transport
+        alice.manager.start()
+        bob.manager.start()
+        return alice to bob
+    }
+
+    @Test
+    fun twoDevicesEstablishASecureSession() = runTest {
+        val (alice, bob) = pair(backgroundScope)
+        alice.engine.addRule(allowConnectRule())
+        bob.engine.addRule(allowConnectRule())
+
+        alice.manager.startDiscovery()
+        advanceUntilIdle()
+
+        alice.manager.connectTo("BB:BB:BB:BB:BB:BB")
+        advanceUntilIdle()
+
+        val alicePeer = alice.manager.peers.value.firstOrNull { it.isSecured }
+        val bobPeer = bob.manager.peers.value.firstOrNull { it.isSecured }
+
+        assertNotNull(alicePeer, "Alice never reached a secured link")
+        assertNotNull(bobPeer, "Bob never reached a secured link")
+        assertEquals(LinkState.SECURED, alicePeer.linkState)
+        assertEquals("Bob", alicePeer.displayName)
+        assertEquals("Alice", bobPeer.displayName)
+    }
+
+    @Test
+    fun eachSideLearnsTheOthersDeviceIdAndFingerprint() = runTest {
+        val (alice, bob) = pair(backgroundScope)
+        alice.engine.addRule(allowConnectRule())
+        bob.engine.addRule(allowConnectRule())
+
+        alice.manager.startDiscovery()
+        alice.manager.connectTo("BB:BB:BB:BB:BB:BB")
+        advanceUntilIdle()
+
+        val alicePeer = assertNotNull(alice.manager.peers.value.firstOrNull { it.isSecured })
+        val bobPeer = assertNotNull(bob.manager.peers.value.firstOrNull { it.isSecured })
+
+        assertNotNull(alicePeer.fingerprint)
+        // Device IDs are derived from keys, so the two sides must not collide.
+        assertTrue(alicePeer.deviceId != bobPeer.deviceId)
+    }
+
+    @Test
+    fun chatMessageTravelsEndToEnd() = runTest {
+        val (alice, bob) = pair(backgroundScope)
+        alice.engine.addRule(allowConnectRule())
+        bob.engine.addRule(allowConnectRule())
+
+        alice.manager.startDiscovery()
+        alice.manager.connectTo("BB:BB:BB:BB:BB:BB")
+        advanceUntilIdle()
+
+        val bobDeviceId = assertNotNull(
+            alice.manager.peers.value.firstOrNull { it.isSecured }?.deviceId
+        )
+
+        alice.manager.sendChat(bobDeviceId, "meet at the north entrance")
+        advanceUntilIdle()
+
+        val received = bob.manager.conversations.value.values
+            .flatMap { it.messages }
+            .firstOrNull { it.direction == MessageDirection.RECEIVED }
+
+        assertNotNull(received, "Bob never received the message")
+        assertEquals("meet at the north entrance", received.body)
+    }
+
+    @Test
+    fun senderSeesDeliveryAcknowledged() = runTest {
+        val (alice, bob) = pair(backgroundScope)
+        alice.engine.addRule(allowConnectRule())
+        bob.engine.addRule(allowConnectRule())
+
+        alice.manager.startDiscovery()
+        alice.manager.connectTo("BB:BB:BB:BB:BB:BB")
+        advanceUntilIdle()
+
+        val bobDeviceId = assertNotNull(
+            alice.manager.peers.value.firstOrNull { it.isSecured }?.deviceId
+        )
+        alice.manager.sendChat(bobDeviceId, "ping")
+        advanceUntilIdle()
+
+        val sent = alice.manager.conversations.value[bobDeviceId]
+            ?.messages
+            ?.firstOrNull { it.direction == MessageDirection.SENT }
+
+        assertNotNull(sent)
+        assertEquals(DeliveryState.DELIVERED, sent.deliveryState)
+    }
+
+    @Test
+    fun aLongMessageSurvivesChunking() = runTest {
+        val (alice, bob) = pair(backgroundScope)
+        alice.engine.addRule(allowConnectRule())
+        bob.engine.addRule(allowConnectRule())
+        // Force many chunks per message.
+        alice.transport.payloadSize = 24
+        bob.transport.payloadSize = 24
+
+        alice.manager.startDiscovery()
+        alice.manager.connectTo("BB:BB:BB:BB:BB:BB")
+        advanceUntilIdle()
+
+        val bobDeviceId = assertNotNull(
+            alice.manager.peers.value.firstOrNull { it.isSecured }?.deviceId
+        )
+
+        val longBody = (1..300).joinToString(" ") { "word$it" }
+        alice.manager.sendChat(bobDeviceId, longBody)
+        advanceUntilIdle()
+
+        val received = bob.manager.conversations.value.values
+            .flatMap { it.messages }
+            .firstOrNull { it.direction == MessageDirection.RECEIVED }
+
+        assertNotNull(received)
+        assertEquals(longBody, received.body)
+    }
+
+    @Test
+    fun inboundConnectionAsksTheUserAndProceedsOnApproval() = runTest {
+        val (alice, bob) = pair(backgroundScope)
+        // Alice may dial out; Bob keeps the default "ask me" posture.
+        alice.engine.addRule(allowConnectRule())
+
+        val bobEvents = mutableListOf<MeshEvent>()
+        backgroundScope.launchCollect(bob.manager.events) { bobEvents.add(it) }
+
+        alice.manager.startDiscovery()
+        alice.manager.connectTo("BB:BB:BB:BB:BB:BB")
+        advanceUntilIdle()
+
+        val prompt = bobEvents.filterIsInstance<MeshEvent.DecisionRequired>().firstOrNull()
+        assertNotNull(prompt, "Bob should have been asked before accepting a stranger")
+        // Nothing is secured while the human has not answered.
+        assertTrue(bob.manager.peers.value.none { it.isSecured })
+
+        bob.manager.resolveDecision(prompt.decisionId, allow = true)
+        advanceUntilIdle()
+
+        assertTrue(bob.manager.peers.value.any { it.isSecured })
+    }
+
+    @Test
+    fun inboundConnectionStaysBlockedWhenTheUserDeclines() = runTest {
+        val (alice, bob) = pair(backgroundScope)
+        alice.engine.addRule(allowConnectRule())
+
+        val bobEvents = mutableListOf<MeshEvent>()
+        backgroundScope.launchCollect(bob.manager.events) { bobEvents.add(it) }
+
+        alice.manager.startDiscovery()
+        alice.manager.connectTo("BB:BB:BB:BB:BB:BB")
+        advanceUntilIdle()
+
+        val prompt = assertNotNull(
+            bobEvents.filterIsInstance<MeshEvent.DecisionRequired>().firstOrNull()
+        )
+        bob.manager.resolveDecision(prompt.decisionId, allow = false)
+        advanceUntilIdle()
+
+        assertTrue(bob.manager.peers.value.none { it.isSecured })
+        assertTrue(alice.manager.peers.value.none { it.isSecured })
+    }
+
+    @Test
+    fun everyMediatedActionReachesTheAuditLog() = runTest {
+        val (alice, bob) = pair(backgroundScope)
+        alice.engine.addRule(allowConnectRule())
+        bob.engine.addRule(allowConnectRule())
+
+        alice.manager.startDiscovery()
+        alice.manager.connectTo("BB:BB:BB:BB:BB:BB")
+        advanceUntilIdle()
+
+        val bobDeviceId = assertNotNull(
+            alice.manager.peers.value.firstOrNull { it.isSecured }?.deviceId
+        )
+        alice.manager.sendChat(bobDeviceId, "hello")
+        advanceUntilIdle()
+
+        val aliceActions = alice.auditLog.recent(100).map { it.request.actionType }
+        val bobActions = bob.auditLog.recent(100).map { it.request.actionType }
+
+        assertTrue(ActionType.DISCOVER_PEER in aliceActions)
+        assertTrue(ActionType.CONNECT_PEER in aliceActions)
+        assertTrue(ActionType.SEND_MESSAGE in aliceActions)
+        assertTrue(ActionType.RECEIVE_MESSAGE in bobActions)
+    }
+}
+
+/** Small helper so tests can observe a SharedFlow without boilerplate. */
+private fun <T> CoroutineScope.launchCollect(flow: Flow<T>, onEach: (T) -> Unit) {
+    launch { flow.collect { onEach(it) } }
+}
