@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import os.proximity.shared.crypto.AndroidCryptoPrimitives
 import os.proximity.shared.domain.DeliveryState
@@ -148,7 +149,7 @@ class MeshManagerIntegrationTest {
     }
 
     @Test
-    fun twoDevicesEstablishASecureSession() = runTest {
+    fun twoDevicesEstablishASecureSession() = runTest(UnconfinedTestDispatcher()) {
         val (alice, bob) = pair(backgroundScope)
         alice.engine.addRule(allowConnectRule())
         bob.engine.addRule(allowConnectRule())
@@ -170,7 +171,7 @@ class MeshManagerIntegrationTest {
     }
 
     @Test
-    fun eachSideLearnsTheOthersDeviceIdAndFingerprint() = runTest {
+    fun eachSideLearnsTheOthersDeviceIdAndFingerprint() = runTest(UnconfinedTestDispatcher()) {
         val (alice, bob) = pair(backgroundScope)
         alice.engine.addRule(allowConnectRule())
         bob.engine.addRule(allowConnectRule())
@@ -188,7 +189,7 @@ class MeshManagerIntegrationTest {
     }
 
     @Test
-    fun chatMessageTravelsEndToEnd() = runTest {
+    fun chatMessageTravelsEndToEnd() = runTest(UnconfinedTestDispatcher()) {
         val (alice, bob) = pair(backgroundScope)
         alice.engine.addRule(allowConnectRule())
         bob.engine.addRule(allowConnectRule())
@@ -213,7 +214,7 @@ class MeshManagerIntegrationTest {
     }
 
     @Test
-    fun senderSeesDeliveryAcknowledged() = runTest {
+    fun senderSeesDeliveryAcknowledged() = runTest(UnconfinedTestDispatcher()) {
         val (alice, bob) = pair(backgroundScope)
         alice.engine.addRule(allowConnectRule())
         bob.engine.addRule(allowConnectRule())
@@ -237,7 +238,7 @@ class MeshManagerIntegrationTest {
     }
 
     @Test
-    fun aLongMessageSurvivesChunking() = runTest {
+    fun aLongMessageSurvivesChunking() = runTest(UnconfinedTestDispatcher()) {
         val (alice, bob) = pair(backgroundScope)
         alice.engine.addRule(allowConnectRule())
         bob.engine.addRule(allowConnectRule())
@@ -266,7 +267,7 @@ class MeshManagerIntegrationTest {
     }
 
     @Test
-    fun inboundConnectionAsksTheUserAndProceedsOnApproval() = runTest {
+    fun inboundConnectionAsksTheUserAndProceedsOnApproval() = runTest(UnconfinedTestDispatcher()) {
         val (alice, bob) = pair(backgroundScope)
         // Alice may dial out; Bob keeps the default "ask me" posture.
         alice.engine.addRule(allowConnectRule())
@@ -290,7 +291,7 @@ class MeshManagerIntegrationTest {
     }
 
     @Test
-    fun inboundConnectionStaysBlockedWhenTheUserDeclines() = runTest {
+    fun inboundConnectionStaysBlockedWhenTheUserDeclines() = runTest(UnconfinedTestDispatcher()) {
         val (alice, bob) = pair(backgroundScope)
         alice.engine.addRule(allowConnectRule())
 
@@ -312,7 +313,7 @@ class MeshManagerIntegrationTest {
     }
 
     @Test
-    fun everyMediatedActionReachesTheAuditLog() = runTest {
+    fun everyMediatedActionReachesTheAuditLog() = runTest(UnconfinedTestDispatcher()) {
         val (alice, bob) = pair(backgroundScope)
         alice.engine.addRule(allowConnectRule())
         bob.engine.addRule(allowConnectRule())
