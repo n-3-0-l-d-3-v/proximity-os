@@ -10,16 +10,18 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import os.proximity.android.data.AppSettings
 import os.proximity.android.mesh.BleMeshTransport
 import os.proximity.android.ui.ProximityApp
 import os.proximity.android.ui.ProximityViewModel
 import os.proximity.shared.crypto.AndroidCryptoPrimitives
 import os.proximity.shared.guardrail.DefaultGuardrailEngine
-import os.proximity.shared.guardrail.InMemoryAuditLog
-import os.proximity.shared.identity.InMemoryTrustStore
+import os.proximity.shared.guardrail.FileAuditLog
+import os.proximity.shared.identity.FileTrustStore
 import os.proximity.shared.identity.JcaSignatureVerifier
 import os.proximity.shared.identity.KeystoreDeviceIdentityProvider
+import os.proximity.shared.storage.AndroidFileStore
 import os.proximity.shared.mesh.MeshManager
 
 /**
@@ -38,9 +40,18 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         val settings = AppSettings(applicationContext)
-        val auditLog = InMemoryAuditLog()
+        val fileStore = AndroidFileStore(applicationContext)
+        val auditLog = FileAuditLog(fileStore)
+        val trustStore = FileTrustStore(fileStore)
         val guardrailEngine = DefaultGuardrailEngine(auditLog)
         val identityProvider = KeystoreDeviceIdentityProvider()
+
+        // Restore before the mesh can act: a peer must not be treated as a
+        // stranger just because the load had not finished yet.
+        meshScope.launch {
+            trustStore.load()
+            auditLog.load()
+        }
 
         val meshManager = MeshManager(
             transport = BleMeshTransport(applicationContext),
@@ -48,7 +59,7 @@ class MainActivity : ComponentActivity() {
             identityProvider = identityProvider,
             verifier = JcaSignatureVerifier(),
             guardrail = guardrailEngine,
-            trustStore = InMemoryTrustStore(),
+            trustStore = trustStore,
             scope = meshScope,
             displayName = { settings.displayName.value }
         )

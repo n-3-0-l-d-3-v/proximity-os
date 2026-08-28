@@ -5,7 +5,6 @@ plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.androidLibrary)
-    alias(libs.plugins.sqldelight)
 }
 
 kotlin {
@@ -32,20 +31,13 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.koin.core)
-            implementation(libs.sqldelight.coroutines.extensions)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.test)
         }
-        androidMain.dependencies {
-            implementation(libs.sqldelight.android.driver)
-        }
         androidUnitTest.dependencies {
             implementation(kotlin("test"))
-        }
-        iosMain.dependencies {
-            implementation(libs.sqldelight.native.driver)
         }
     }
 }
@@ -61,13 +53,5 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-    }
-}
-
-sqldelight {
-    databases {
-        create("ProximityDatabase") {
-            packageName.set("os.proximity.shared.db")
-        }
     }
 }
