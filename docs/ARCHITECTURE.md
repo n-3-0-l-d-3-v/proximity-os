@@ -2,74 +2,126 @@
 
 ## Overview
 
-Proximity OS is layered so that the riskiest code (transport, radios) is
-farthest from the UI, and nothing can reach the transport layer, or return
-data from it to the UI, without passing through the Guardrail Engine.
+Proximity OS is layered so the riskiest code (radios, peer-supplied bytes)
+sits farthest from the UI, and nothing crosses between them without passing
+through the Guardrail Engine.
 
 ```
 ┌─────────────────────────────────────────────┐
 │          Compose Multiplatform UI            │
-│     (Polished, modern, Material 3 based)     │
+│   Nearby · Chat · Activity · Rules           │
 └─────────────────────┬───────────────────────┘
-                       │
+                      │  ProximityViewModel
+┌─────────────────────▼───────────────────────┐
+│                MeshManager                   │
+│   the only path between radio and app        │
+└─────────────────────┬───────────────────────┘
+                      │
 ┌─────────────────────▼───────────────────────┐
 │              Guardrail Engine                │
-│  • Policy evaluation                         │
-│  • Sandboxing / isolation                    │
-│  • Readable audit logging                    │
-│  • Plain-language explanations               │
+│  safety floor → user rules → category default│
+│  every decision appended to the audit log    │
 └─────────────────────┬───────────────────────┘
-                       │
+                      │
 ┌─────────────────────▼───────────────────────┐
-│         Capability & Identity Layer          │
-│  • Cryptographic device identities           │
-│  • Short-lived capabilities                  │
-│  • Permission / capability tokens            │
+│        Session · Identity · Crypto           │
+│  handshake, SecureSession, Keystore identity │
 └─────────────────────┬───────────────────────┘
-                       │
+                      │
 ┌─────────────────────▼───────────────────────┐
-│           Transport & Mesh Layer             │
-│  • Bluetooth LE + Wi-Fi Direct/Aware         │
-│  • Multi-hop forwarding                      │
-│  • Store-and-forward                         │
-│  • Link quality scoring                      │
+│              Protocol (framing)              │
+│  chunking · reassembly · envelopes           │
+└─────────────────────┬───────────────────────┘
+                      │
+┌─────────────────────▼───────────────────────┐
+│           Transport (BluetoothLE)            │
+│  scan · advertise · GATT client + server     │
 └─────────────────────────────────────────────┘
 ```
 
+## The central invariant
+
+**Every inbound frame and every outbound action passes through
+`MeshManager`, and `MeshManager` consults the Guardrail Engine before
+acting.**
+
+This is enforced structurally rather than by convention:
+
+- `MeshTransport` is an interface with no public surface that returns
+  application data. It emits raw bytes and accepts raw bytes.
+- Only `MeshManager` holds a `MeshTransport`.
+- The UI holds a `ProximityViewModel`, which holds a `MeshManager`. It has
+  no route to the transport at all.
+
+If a future change needs a new capability, the way to add it is a new
+`ActionType` — which forces a policy decision to exist for it, because the
+engine's fallback is deny.
+
 ## Module boundaries
 
-- **`shared`** (Kotlin Multiplatform): all platform-agnostic business logic.
-  - `guardrail/` — policy model, evaluator, audit log, explanation generation.
-  - `identity/` — device keypairs, identity documents, capability tokens.
-  - `crypto/` — thin wrappers around Tink primitives (AEAD, signatures, key agreement).
-  - `mesh/` — routing tables, store-and-forward queue, link scoring — platform-agnostic parts only.
-  - `model/` — shared domain models (messages, lists, capabilities) and kotlinx.serialization schemas.
-- **`androidApp`**: Android-specific transport implementations (BLE, Wi-Fi
-  Aware/Direct via `android.net.wifi.aware` / `WifiP2pManager`), foreground
-  service for mesh participation, and the Compose Multiplatform UI shell.
-- **iOS app** (later): Core Bluetooth / Multipeer Connectivity transport
-  implementations behind the same `expect`/`actual` transport interface, same
-  Compose Multiplatform UI.
+**`shared`** (Kotlin Multiplatform) — all platform-agnostic logic:
 
-## Data flow rule
+| Package | Responsibility |
+|---|---|
+| `crypto/` | `CryptoPrimitives` interface, HKDF, `SecureSession` |
+| `session/` | Handshake state machine, length-prefixed transcripts |
+| `identity/` | `DeviceIdentity`, `SignatureVerifier`, `TrustStore` |
+| `protocol/` | `Frame`, chunking, reassembly, `Envelope` + codec |
+| `guardrail/` | Engine, rules, `PolicyCatalog`, audit log |
+| `mesh/` | `MeshTransport` interface, `MeshManager` |
+| `domain/` | `Peer`, `ChatMessage`, `Conversation` |
 
-Every inbound frame from the transport layer and every outbound action
-initiated by the UI or shared logic passes through
-`GuardrailEngine.evaluate(request): Decision` before it is acted on. There is
-no code path that bypasses this — transport implementations do not expose raw
-sockets/channels to UI or application code directly; they only feed the
-mesh layer, which only feeds the Guardrail Engine.
+**`androidApp`** — Android specifics only: the BLE transport, JCA/Keystore
+implementations of the shared crypto and identity interfaces, and the
+Compose UI.
 
-## Why KMP + Compose Multiplatform
+## Why the platform surface is small
 
-Business logic (policy, crypto, identity, routing decisions) is identical in
-intent across Android and iOS; only the radio APIs differ. Sharing that logic
-in Kotlin avoids re-implementing (and re-auditing) the Guardrail Engine twice.
-Compose Multiplatform lets the UI be shared too, with platform-specific
-adjustments where needed (e.g. background execution model differences).
+`CryptoPrimitives` exposes only RNG, SHA-256, HMAC, ECDH, and AES-GCM.
+Everything built from those — key derivation, transcripts, the session key
+schedule, nonce management — lives in `shared`.
+
+This is a deliberate trade. Per-platform crypto composition would mean
+writing the key schedule twice and verifying it nowhere. Keeping it shared
+means HKDF can be checked against RFC 5869 vectors once and both platforms
+inherit that guarantee.
+
+## Data flow: receiving a message
+
+1. BLE GATT server receives a write → `IncomingMessage(address, bytes)`.
+2. `Frame.decode` — returns null for anything malformed. No exceptions
+   escape into the transport.
+3. `MessageAssembler.offer` — reassembles chunks under a memory bound.
+4. Handshake frames drive the handshake; sealed frames go to
+   `SecureSession.open`, which rejects replays and forgeries silently.
+5. `EnvelopeCodec.decode` — null on malformed input.
+6. The Guardrail Engine evaluates a `GuardrailRequest` for the action.
+7. Only then does the payload reach application state.
+
+Each of steps 2, 3, 5 and 6 can drop the message. That's the intended
+shape: a hostile peer's best case is being ignored.
+
+## Threading
+
+- `MeshManager` runs on a `SupervisorJob` scope owned by the composition
+  root, on `Dispatchers.Default`.
+- Its internal maps are guarded by a `Mutex`. The mutex is never held
+  across a transport call, so a slow radio cannot deadlock the manager.
+- `SecureSession` and `MessageAssembler` are documented as not thread-safe
+  and are confined to `MeshManager`'s coroutines.
+
+## Known architectural gaps
+
+- **Persistence.** `InMemoryAuditLog` and `InMemoryTrustStore` are
+  placeholders. The interfaces are shaped for SQLDelight but the durable
+  implementations do not exist, so verification decisions and the audit log
+  do not survive a restart. This is the most significant gap.
+- **Single hop.** `MeshManager` has no routing table; `RELAY_MESSAGE`
+  exists as a policy concept but nothing forwards yet.
+- **Lifecycle.** No foreground service, so the mesh stops when the app is
+  backgrounded.
 
 ## Status
 
-This document describes the target architecture. Implementation is in
-Phase 0 — only the module skeletons and the `GuardrailEngine` interface
-currently exist. See the [README](../README.md) for phase status.
+The layering and interfaces described here are implemented. The gaps above
+are named as gaps rather than described as if they exist.
