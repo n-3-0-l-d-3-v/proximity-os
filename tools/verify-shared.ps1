@@ -99,12 +99,18 @@ Write-Host "Compiling tests..."
     -classpath $testCp "-Xfriend-paths=$Work\main" -nowarn -d "$Work\test" "$Work\tsrc"
 if ($LASTEXITCODE -ne 0) { throw "tests failed to compile" }
 
+
 # Discover test classes rather than hard-coding them, so new suites are
 # picked up without editing this script.
-$testClasses = Get-ChildItem "$Work\test" -Recurse -Filter "*Test.class" |
-    Where-Object { $_.Name -notmatch '\$' } |
+# Get-Item yields the canonical long path; Resolve-Path can return an 8.3
+# short form, which would misalign the Substring below.
+$testRoot = (Get-Item (Join-Path $Work "test")).FullName.TrimEnd([char]92)
+$testClasses = Get-ChildItem $testRoot -Recurse -Filter "*Test.class" |
+    Where-Object { $_.Name -notlike "*`$*" } |
     ForEach-Object {
-        $_.FullName.Substring("$Work\test\".Length) -replace '\', '.' -replace '\.class$', ''
+        $rel = $_.FullName.Substring($testRoot.Length + 1)
+        $rel = $rel.Substring(0, $rel.Length - ".class".Length)
+        $rel.Replace([char]92, ".")
     }
 
 Write-Host "Running $($testClasses.Count) test classes..."
