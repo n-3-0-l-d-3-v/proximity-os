@@ -339,8 +339,15 @@ class MeshManager(
             session = session
         )
 
-        updateMessage(peerDeviceId, messageId) {
-            it.copy(deliveryState = if (sent) DeliveryState.SENT else DeliveryState.FAILED)
+        updateMessage(peerDeviceId, messageId) { current ->
+            when {
+                !sent -> current.copy(deliveryState = DeliveryState.FAILED)
+                // On a fast link the peer's ack can arrive before send()
+                // returns. Never move a message backwards from DELIVERED,
+                // or it would show as merely "sent" forever.
+                current.deliveryState == DeliveryState.DELIVERED -> current
+                else -> current.copy(deliveryState = DeliveryState.SENT)
+            }
         }
         return sent
     }
