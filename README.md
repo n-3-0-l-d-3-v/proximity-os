@@ -50,6 +50,8 @@ what this app just did, and why?*
 - Guardrail Engine: safety floor, user-configurable rules, category
   defaults, and an audit log entry for every decision.
 - `MeshManager`: the single choke point between the radio and the app.
+- Durable storage for the audit log and verified-peer decisions, with
+  atomic writes, corruption recovery, and fail-closed trust loading.
 - Bluetooth LE transport: symmetric scan/advertise, GATT client and server,
   serialised writes, MTU negotiation.
 - UI: onboarding, nearby devices, chat, audit log, and policy settings.
@@ -57,8 +59,9 @@ what this app just did, and why?*
 **Not built yet**
 
 - Multi-hop relay and store-and-forward (messages only travel one hop).
-- Durable storage — the audit log, conversations, and trust decisions are
-  in memory and are lost when the app is killed.
+- Conversation history is not persisted — messages are lost when the app
+  is killed. The audit log and trust decisions now survive.
+- Encryption at rest for stored data (see docs/adr/0002-storage.md).
 - File transfer, shared lists, and capability advertisement.
 - QR-code verification (fingerprints are compared manually today).
 - A foreground service, so the mesh stops when the app is backgrounded.
@@ -132,12 +135,21 @@ Run the test suites — the shared logic is where the guarantees live:
 ./gradlew :shared:testDebugUnitTest
 ```
 
+If Gradle cannot run in your environment (it needs a loopback socket for
+its daemon, which some sandboxes block), the same suites can be compiled
+and run directly:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools/verify-shared.ps1
+```
+
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Threat model](docs/THREAT_MODEL.md)
 - [Guardrail policy design](docs/GUARDRAIL_POLICY.md)
 - [ADR 0001 — Cryptography](docs/adr/0001-cryptography.md)
+- [ADR 0002 — Local storage](docs/adr/0002-storage.md)
 - [Changelog](docs/CHANGELOG.md)
 
 ## License
