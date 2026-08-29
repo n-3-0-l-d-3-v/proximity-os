@@ -7,6 +7,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import os.proximity.shared.mesh.ListSyncDelegate
 import os.proximity.shared.storage.FileStore
 
 /**
@@ -27,7 +28,7 @@ class SharedListRepository(
     private val deviceId: suspend () -> String,
     private val now: () -> Long,
     private val fileName: String = DEFAULT_FILE_NAME
-) {
+) : ListSyncDelegate {
 
     private val mutex = Mutex()
     private val listsState = MutableStateFlow<Map<String, SharedList>>(emptyMap())
@@ -152,8 +153,13 @@ class SharedListRepository(
         persist()
     }
 
-    /** Snapshots to send a peer when a session is established. */
-    fun snapshots(): List<SharedList> = listsState.value.values.toList()
+    // ------------------------------------------------- ListSyncDelegate
+
+    override suspend fun onRemoteOperation(operation: ListOperation) = applyRemote(operation)
+
+    override suspend fun onRemoteSnapshot(list: SharedList) = mergeRemote(list)
+
+    override fun snapshotsForSync(): List<SharedList> = listsState.value.values.toList()
 
     private suspend fun edit(
         listId: String,
