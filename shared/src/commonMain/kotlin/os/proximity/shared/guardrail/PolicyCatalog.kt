@@ -25,6 +25,7 @@ object PolicyCatalog {
     const val BLOCK_UNVERIFIED_MESSAGES = "block_unverified_messages"
     const val ALLOW_LOCATION_ON_ASK = "allow_location_on_ask"
     const val ALLOW_RELAY = "allow_relay"
+    const val LISTS_FROM_VERIFIED_ONLY = "lists_from_verified_only"
 
     val options: List<PolicyOption> = listOf(
         PolicyOption(
@@ -139,6 +140,32 @@ object PolicyCatalog {
                     decide = {
                         GuardrailDecision.Allow(
                             "You've chosen to help carry messages for nearby devices."
+                        )
+                    }
+                )
+            }
+        ),
+
+        PolicyOption(
+            id = LISTS_FROM_VERIFIED_ONLY,
+            title = "Only share lists with people I have verified",
+            explanation = "Off by default, because sharing a shopping list with someone you " +
+                "just met is the point. Turn it on if your lists say more about you than you " +
+                "would tell a stranger.",
+            enabledByDefault = false,
+            buildRule = {
+                PolicyRule(
+                    id = LISTS_FROM_VERIFIED_ONLY,
+                    description = "Restrict list sync to verified peers",
+                    priority = 65,
+                    matches = { request ->
+                        request.actionType == ActionType.SYNC_LIST &&
+                            request.peer?.trustState != TrustState.VERIFIED
+                    },
+                    decide = {
+                        GuardrailDecision.Deny(
+                            "You only share lists with people you have verified, and you have " +
+                                "not verified this device yet."
                         )
                     }
                 )

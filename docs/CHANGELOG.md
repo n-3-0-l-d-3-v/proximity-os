@@ -80,3 +80,37 @@ listed here — this tracks meaningful progress, not every file touched.
 - Messages travel one hop only — no relay or store-and-forward.
 - Never run between two physical phones; BLE behaviour is unproven.
 - No foreground service, so the mesh stops when the app is backgrounded.
+
+## Phase 3 — Practical Features (in progress)
+
+**Shared lists**
+
+- Lists replicate as an operation-based CRDT with last-writer-wins
+  registers per field, so concurrent edits to different fields both
+  survive. Ordering uses Lamport counters rather than wall-clock time, so a
+  device with a wrong clock cannot dominate every conflict. Rationale in
+  `docs/adr/0003-shared-lists.md`.
+- Deletion is a tombstone, so a peer that missed a delete cannot resurrect
+  the item.
+- Live edits broadcast as operations; full replicas are exchanged on
+  connect so devices that were apart reconcile.
+- Convergence is tested as a property over shuffled, duplicated and
+  reversed operation streams. This found two real bugs:
+  - `ADD` advanced `doneStamp` without writing a `done` value, which
+    suppressed earlier edits depending on arrival order.
+  - `createdAtEpochMillis` came from whichever operation first materialised
+    an item, so replicas sorted the same list differently.
+- New `SYNC_LIST` action type, mediated by the Guardrail Engine in both
+  directions, plus a user policy to restrict list sharing to verified peers.
+- Lists tab with list overview and item detail screens.
+
+**Mesh robustness** (both found by the list integration tests)
+
+- Sealed frames arriving before the local session is ready are now buffered
+  and replayed. The responder completes its handshake first and could send
+  application data while the initiator was still deriving keys; those
+  frames were being dropped permanently.
+- Handshake role is now determined by envelope type rather than local
+  state. A peer that dropped and reconnected sends a fresh `Hello`, which
+  was previously mistaken for a reply to our own in-flight handshake,
+  leaving both sides stuck.
