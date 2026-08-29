@@ -114,6 +114,13 @@ class MeshManager(
         var messageCounter: Int = 0,
         /** Separate sequence: identifies a chunked frame group on the wire. */
         var frameCounter: Int = 0,
+        /**
+         * Sealed payloads that arrived before this side finished its
+         * handshake. The responder completes first and may send application
+         * data while the initiator is still deriving keys, so without this
+         * those frames would be dropped for good.
+         */
+        val pendingSealed: MutableList<ByteArray> = mutableListOf(),
         var detail: String? = null
     )
 
@@ -486,11 +493,23 @@ class MeshManager(
     private suspend fun onHandshakeMessage(context: LinkContext, assembled: AssembledMessage) {
         val envelope = EnvelopeCodec.decode(assembled.payload) ?: return
 
-        val existing = context.handshake
-        if (existing != null) {
-            // We initiated; this is the peer's HelloAck.
-            completeHandshake(context, existing, envelope)
-            return
+        // Which side is which is decided by the envelope type, never by our
+        // own local state. A peer that dropped and reconnected sends a fresh
+        // Hello, and we may still be holding a session it has forgotten —
+        // inferring the role from "do I have a handshake in progress?" would
+        // mistake that Hello for a reply and leave both sides stuck.
+        when (envelope) {
+            is Envelope.HelloAck -> {
+                // Only meaningful if we actually initiated. An unsolicited
+                // ack is dropped rather than trusted.
+                val pending = context.handshake ?: return
+                completeHandshake(context, pending, envelope)
+                return
+            }
+
+            is Envelope.Hello -> resetLink(context)
+
+            else -> return
         }
 
         // Inbound connection: policy decides whether we answer at all.
@@ -582,16 +601,27 @@ class MeshManager(
                     MeshEvent.Notice("Secure channel established with ${session.peerDisplayName}.")
                 )
 
-                // Offer our list state immediately: the peer may have been
-                // out of range while either side edited, and the merge is
-                // what reconciles those divergent histories.
+                // Anything the peer sent while we were still deriving keys.
+                drainPendingSealed(context)
+
+                // Offer our list state: the peer may have been out of range
+                // while either side edited, and the merge is what reconciles
+                // those divergent histories.
                 sendListSnapshots(context, session)
             }
         }
     }
 
     private suspend fun onSealedMessage(context: LinkContext, assembled: AssembledMessage) {
-        val session = context.session ?: return
+        val session = context.session
+        if (session == null) {
+            // Bounded: a peer must not be able to make us hold arbitrary
+            // data by never completing a handshake.
+            if (context.pendingSealed.size < MAX_PENDING_SEALED) {
+                context.pendingSealed.add(assembled.payload)
+            }
+            return
+        }
         // A record that fails to open is dropped silently — telling a peer
         // why would leak whether it was a bad tag, a replay, or a stale key.
         val plaintext = session.open(assembled.payload) ?: return
@@ -735,7 +765,29 @@ class MeshManager(
             )
     }
 
+    /**
+     * Forgets any session state for a link, so a peer re-initiating after a
+     * drop starts cleanly. Keeping a stale session would mean decrypting
+     * with keys the peer has already discarded.
+     */
+    private fun resetLink(context: LinkContext) {
+        context.handshake = null
+        context.session = null
+        context.pendingSealed.clear()
+        context.assembler.clear()
+    }
+
+    private suspend fun drainPendingSealed(context: LinkContext) {
+        if (context.pendingSealed.isEmpty()) return
+        val buffered = context.pendingSealed.toList()
+        context.pendingSealed.clear()
+        buffered.forEach { payload ->
+            onSealedMessage(context, AssembledMessage(0, FrameType.SEALED, payload))
+        }
+    }
+
     companion object {
         private const val MAX_MESSAGE_LENGTH = 4000
+        private const val MAX_PENDING_SEALED = 32
     }
 }
