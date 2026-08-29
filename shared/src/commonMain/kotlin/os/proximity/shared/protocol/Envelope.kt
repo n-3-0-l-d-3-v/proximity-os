@@ -3,6 +3,8 @@ package os.proximity.shared.protocol
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import os.proximity.shared.lists.ListOperation
+import os.proximity.shared.lists.SharedList
 
 /**
  * Application-level messages, carried inside an encrypted [FrameType.SEALED]
@@ -61,24 +63,22 @@ sealed class Envelope {
     ) : Envelope()
 
     /**
-     * An operation on a shared list. Modelled as an operation rather than a
-     * snapshot so two devices that edited while apart can merge instead of
+     * A single change to a shared list. Sent as an operation rather than a
+     * snapshot so two devices that edited while apart merge instead of
      * clobbering each other.
      */
     @Serializable
     @SerialName("list_op")
-    data class ListOp(
-        val listId: String,
-        val opId: String,
-        val kind: Kind,
-        val itemId: String,
-        val text: String? = null,
-        val done: Boolean? = null,
-        val atEpochMillis: Long
-    ) : Envelope() {
-        @Serializable
-        enum class Kind { ADD, SET_TEXT, SET_DONE, REMOVE }
-    }
+    data class ListOp(val operation: ListOperation) : Envelope()
+
+    /**
+     * Full replicas, exchanged when a session is established. Replaying
+     * every operation ever made would not scale, so reconnecting peers
+     * swap state and merge it instead.
+     */
+    @Serializable
+    @SerialName("list_sync")
+    data class ListSync(val lists: List<SharedList>) : Envelope()
 
     /** A short-lived capability this device is offering to the mesh. */
     @Serializable

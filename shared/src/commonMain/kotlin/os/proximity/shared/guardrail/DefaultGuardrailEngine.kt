@@ -77,9 +77,14 @@ class DefaultGuardrailEngine(
                 )
 
             ActionType.SEND_MESSAGE,
-            ActionType.RECEIVE_MESSAGE ->
+            ActionType.RECEIVE_MESSAGE,
+            // List sync rides inside an already-approved encrypted session.
+            // A stricter posture is available as a user policy rather than
+            // being forced here, because refusing to sync with someone you
+            // just met would defeat the feature.
+            ActionType.SYNC_LIST ->
                 GuardrailDecision.Allow(
-                    "Messaging is allowed with peers you've already accepted a connection from."
+                    "Allowed with peers you have already accepted a connection from."
                 )
 
             else ->

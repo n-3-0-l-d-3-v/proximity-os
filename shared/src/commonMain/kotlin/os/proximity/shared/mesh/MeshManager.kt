@@ -26,6 +26,7 @@ import os.proximity.shared.guardrail.PeerContext
 import os.proximity.shared.guardrail.RequestDirection
 import os.proximity.shared.guardrail.TrustState
 import os.proximity.shared.identity.DeviceIdentityProvider
+import os.proximity.shared.lists.ListOperation
 import os.proximity.shared.identity.SignatureVerifier
 import os.proximity.shared.identity.TrustStore
 import os.proximity.shared.protocol.AssembledMessage
@@ -80,7 +81,9 @@ class MeshManager(
     private val guardrail: GuardrailEngine,
     private val trustStore: TrustStore,
     private val scope: CoroutineScope,
-    private val displayName: () -> String
+    private val displayName: () -> String,
+    /** Optional: when absent, list traffic is simply not carried. */
+    private val listSync: ListSyncDelegate? = null
 ) {
 
     private val mutex = Mutex()
@@ -352,6 +355,88 @@ class MeshManager(
         return sent
     }
 
+    // ---------------------------------------------------------------- lists
+
+    /**
+     * Sends a local list change to every peer we currently hold a secure
+     * session with. Returns how many peers accepted it.
+     *
+     * Best effort by design: a peer that has walked out of range simply
+     * misses this operation and picks the change up from the snapshot
+     * exchange next time it connects. That is why the merge has to be
+     * order-independent.
+     */
+    suspend fun broadcastListOperation(operation: ListOperation): Int {
+        val targets = mutex.withLock {
+            links.values.filter { it.session != null }
+        }
+        var delivered = 0
+
+        for (context in targets) {
+            val session = context.session ?: continue
+            val decision = guardrail.evaluate(
+                GuardrailRequest(
+                    direction = RequestDirection.OUTBOUND,
+                    actionType = ActionType.SYNC_LIST,
+                    peer = PeerContext(
+                        session.peerDeviceId,
+                        trustStore.trustStateOf(session.peerDeviceId)
+                    )
+                )
+            )
+            if (decision !is GuardrailDecision.Allow) continue
+
+            if (sendEnvelope(context, Envelope.ListOp(operation), FrameType.SEALED, session)) {
+                delivered++
+            }
+        }
+        return delivered
+    }
+
+    private suspend fun sendListSnapshots(context: LinkContext, session: SecureSession) {
+        val delegate = listSync ?: return
+        val snapshots = delegate.snapshotsForSync()
+        if (snapshots.isEmpty()) return
+
+        val decision = guardrail.evaluate(
+            GuardrailRequest(
+                direction = RequestDirection.OUTBOUND,
+                actionType = ActionType.SYNC_LIST,
+                peer = PeerContext(
+                    session.peerDeviceId,
+                    trustStore.trustStateOf(session.peerDeviceId)
+                )
+            )
+        )
+        if (decision !is GuardrailDecision.Allow) return
+
+        sendEnvelope(context, Envelope.ListSync(snapshots), FrameType.SEALED, session)
+    }
+
+    private suspend fun onListTraffic(session: SecureSession, envelope: Envelope) {
+        val delegate = listSync ?: return
+        val decision = guardrail.evaluate(
+            GuardrailRequest(
+                direction = RequestDirection.INBOUND,
+                actionType = ActionType.SYNC_LIST,
+                peer = PeerContext(
+                    session.peerDeviceId,
+                    trustStore.trustStateOf(session.peerDeviceId)
+                )
+            )
+        )
+        if (decision !is GuardrailDecision.Allow) {
+            eventsFlow.emit(MeshEvent.Blocked(decision.reason))
+            return
+        }
+
+        when (envelope) {
+            is Envelope.ListOp -> delegate.onRemoteOperation(envelope.operation)
+            is Envelope.ListSync -> envelope.lists.forEach { delegate.onRemoteSnapshot(it) }
+            else -> Unit
+        }
+    }
+
     private suspend fun sendEnvelope(
         context: LinkContext,
         envelope: Envelope,
@@ -496,6 +581,11 @@ class MeshManager(
                 eventsFlow.emit(
                     MeshEvent.Notice("Secure channel established with ${session.peerDisplayName}.")
                 )
+
+                // Offer our list state immediately: the peer may have been
+                // out of range while either side edited, and the merge is
+                // what reconciles those divergent histories.
+                sendListSnapshots(context, session)
             }
         }
     }
@@ -512,6 +602,8 @@ class MeshManager(
             is Envelope.Ack -> updateMessage(session.peerDeviceId, envelope.messageId) {
                 it.copy(deliveryState = DeliveryState.DELIVERED)
             }
+
+            is Envelope.ListOp, is Envelope.ListSync -> onListTraffic(session, envelope)
             // Remaining envelope kinds arrive in later phases; ignoring them
             // is the default-deny position, not an oversight.
             else -> Unit

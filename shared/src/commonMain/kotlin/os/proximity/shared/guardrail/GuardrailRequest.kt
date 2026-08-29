@@ -33,6 +33,7 @@ enum class ActionType {
     ADVERTISE_CAPABILITY,
     REQUEST_CAPABILITY,
     RELAY_MESSAGE,
+    SYNC_LIST,
     LEAVE_MESH,
     EXECUTE_CODE
 }
