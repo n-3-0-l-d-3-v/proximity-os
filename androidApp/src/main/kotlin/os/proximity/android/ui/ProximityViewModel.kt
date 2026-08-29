@@ -16,6 +16,8 @@ import os.proximity.shared.guardrail.AuditLogEntry
 import os.proximity.shared.guardrail.DefaultGuardrailEngine
 import os.proximity.shared.guardrail.PolicyCatalog
 import os.proximity.shared.identity.DeviceIdentityProvider
+import os.proximity.shared.lists.SharedList
+import os.proximity.shared.lists.SharedListRepository
 import os.proximity.shared.mesh.MeshEvent
 import os.proximity.shared.mesh.MeshManager
 
@@ -31,6 +33,7 @@ class ProximityViewModel(
     private val engine: DefaultGuardrailEngine,
     private val auditLog: AuditLog,
     private val identityProvider: DeviceIdentityProvider,
+    private val listRepository: SharedListRepository,
     val mesh: MeshManager
 ) : ViewModel() {
 
@@ -41,6 +44,7 @@ class ProximityViewModel(
     val displayName: StateFlow<String> = settings.displayName
     val hasOnboarded: StateFlow<Boolean> = settings.hasOnboarded
     val enabledPolicyIds: StateFlow<Set<String>> = settings.enabledPolicyIds
+    val lists: StateFlow<Map<String, SharedList>> = listRepository.lists
 
     /** A Guardrail "ask me" decision currently blocking the mesh. */
     var pendingDecision by mutableStateOf<MeshEvent.DecisionRequired?>(null)
@@ -112,6 +116,34 @@ class ProximityViewModel(
         viewModelScope.launch { mesh.sendChat(peerDeviceId, trimmed) }
     }
 
+    // ---------------------------------------------------------------- lists
+
+    fun createList(name: String) {
+        viewModelScope.launch { listRepository.createList(name) }
+    }
+
+    fun addListItem(listId: String, text: String) {
+        if (text.isBlank()) return
+        viewModelScope.launch { broadcast(listRepository.addItem(listId, text)) }
+    }
+
+    fun setListItemDone(listId: String, itemId: String, done: Boolean) {
+        viewModelScope.launch { broadcast(listRepository.setItemDone(listId, itemId, done)) }
+    }
+
+    fun removeListItem(listId: String, itemId: String) {
+        viewModelScope.launch { broadcast(listRepository.removeItem(listId, itemId)) }
+    }
+
+    /**
+     * Local state is already updated by the repository; this only tells
+     * peers. A failure to reach anyone is not an error — the change is kept
+     * and reconciled the next time we connect.
+     */
+    private suspend fun broadcast(operation: os.proximity.shared.lists.ListOperation?) {
+        if (operation != null) mesh.broadcastListOperation(operation)
+    }
+
     // ---------------------------------------------------------------- trust
 
     fun markVerified(deviceId: String) {
@@ -146,10 +178,13 @@ class ProximityViewModel(
         private val engine: DefaultGuardrailEngine,
         private val auditLog: AuditLog,
         private val identityProvider: DeviceIdentityProvider,
+        private val listRepository: SharedListRepository,
         private val mesh: MeshManager
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            ProximityViewModel(settings, engine, auditLog, identityProvider, mesh) as T
+            ProximityViewModel(
+                settings, engine, auditLog, identityProvider, listRepository, mesh
+            ) as T
     }
 }

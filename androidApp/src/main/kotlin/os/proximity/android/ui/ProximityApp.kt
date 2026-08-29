@@ -38,6 +38,8 @@ import os.proximity.android.ui.components.Banner
 import os.proximity.android.ui.screens.AuditScreen
 import os.proximity.android.ui.screens.ChatScreen
 import os.proximity.android.ui.screens.ConversationListScreen
+import os.proximity.android.ui.screens.ListDetailScreen
+import os.proximity.android.ui.screens.ListsScreen
 import os.proximity.android.ui.screens.NearbyScreen
 import os.proximity.android.ui.screens.OnboardingScreen
 import os.proximity.android.ui.screens.PoliciesScreen
@@ -45,6 +47,7 @@ import os.proximity.android.ui.theme.ProximityTheme
 
 private enum class Tab(val title: String, val glyph: String) {
     NEARBY("Nearby", "◎"),
+    LISTS("Lists", "✓"),
     CHATS("Chats", "✉"),
     ACTIVITY("Activity", "☰"),
     RULES("Rules", "⚙")
@@ -98,35 +101,45 @@ fun ProximityApp(
 private fun MainScaffold(viewModel: ProximityViewModel, displayName: String) {
     var tab by remember { mutableStateOf(Tab.NEARBY) }
     var openChatDeviceId by remember { mutableStateOf<String?>(null) }
+    var openListId by remember { mutableStateOf<String?>(null) }
 
     val peers by viewModel.peers.collectAsState()
     val conversations by viewModel.conversations.collectAsState()
     val auditEntries by viewModel.auditEntries.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
     val enabledPolicies by viewModel.enabledPolicyIds.collectAsState()
+    val lists by viewModel.lists.collectAsState()
 
     val openConversation = openChatDeviceId?.let { conversations[it] }
+    val openList = openListId?.let { lists[it] }
+    val isDrilledIn = openConversation != null || openList != null
 
-    BackHandler(enabled = openConversation != null) { openChatDeviceId = null }
+    BackHandler(enabled = isDrilledIn) {
+        openChatDeviceId = null
+        openListId = null
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = openConversation?.peerLabel ?: "Proximity OS",
+                        text = openConversation?.peerLabel ?: openList?.name ?: "Proximity OS",
                         fontWeight = FontWeight.SemiBold
                     )
                 },
                 navigationIcon = {
-                    if (openConversation != null) {
-                        TextButton(onClick = { openChatDeviceId = null }) { Text("Back") }
+                    if (isDrilledIn) {
+                        TextButton(onClick = {
+                            openChatDeviceId = null
+                            openListId = null
+                        }) { Text("Back") }
                     }
                 }
             )
         },
         bottomBar = {
-            if (openConversation == null) {
+            if (!isDrilledIn) {
                 NavigationBar {
                     Tab.entries.forEach { entry ->
                         NavigationBarItem(
@@ -166,6 +179,22 @@ private fun MainScaffold(viewModel: ProximityViewModel, displayName: String) {
                     onDisconnect = viewModel::disconnect,
                     onOpenChat = { openChatDeviceId = it },
                     onVerify = viewModel::markVerified
+                )
+
+                openList != null -> ListDetailScreen(
+                    list = openList,
+                    onToggleItem = { itemId, done ->
+                        viewModel.setListItemDone(openList.id, itemId, done)
+                    },
+                    onAddItem = { viewModel.addListItem(openList.id, it) },
+                    onRemoveItem = { viewModel.removeListItem(openList.id, it) }
+                )
+
+                tab == Tab.LISTS -> ListsScreen(
+                    lists = lists.values.sortedBy { it.name },
+                    connectedPeerCount = peers.count { it.isSecured },
+                    onOpen = { openListId = it },
+                    onCreate = viewModel::createList
                 )
 
                 tab == Tab.CHATS -> ConversationListScreen(

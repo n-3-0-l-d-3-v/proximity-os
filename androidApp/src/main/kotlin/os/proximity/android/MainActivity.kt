@@ -21,6 +21,7 @@ import os.proximity.shared.guardrail.FileAuditLog
 import os.proximity.shared.identity.FileTrustStore
 import os.proximity.shared.identity.JcaSignatureVerifier
 import os.proximity.shared.identity.KeystoreDeviceIdentityProvider
+import os.proximity.shared.lists.SharedListRepository
 import os.proximity.shared.storage.AndroidFileStore
 import os.proximity.shared.mesh.MeshManager
 
@@ -45,12 +46,18 @@ class MainActivity : ComponentActivity() {
         val trustStore = FileTrustStore(fileStore)
         val guardrailEngine = DefaultGuardrailEngine(auditLog)
         val identityProvider = KeystoreDeviceIdentityProvider()
+        val listRepository = SharedListRepository(
+            files = fileStore,
+            deviceId = { identityProvider.getOrCreateIdentity().deviceId },
+            now = { System.currentTimeMillis() }
+        )
 
         // Restore before the mesh can act: a peer must not be treated as a
         // stranger just because the load had not finished yet.
         meshScope.launch {
             trustStore.load()
             auditLog.load()
+            listRepository.load()
         }
 
         val meshManager = MeshManager(
@@ -61,7 +68,8 @@ class MainActivity : ComponentActivity() {
             guardrail = guardrailEngine,
             trustStore = trustStore,
             scope = meshScope,
-            displayName = { settings.displayName.value }
+            displayName = { settings.displayName.value },
+            listSync = listRepository
         )
 
         val viewModel = ViewModelProvider(
@@ -71,6 +79,7 @@ class MainActivity : ComponentActivity() {
                 engine = guardrailEngine,
                 auditLog = auditLog,
                 identityProvider = identityProvider,
+                listRepository = listRepository,
                 mesh = meshManager
             )
         )[ProximityViewModel::class.java]
