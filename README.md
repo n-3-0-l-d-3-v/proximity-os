@@ -50,8 +50,11 @@ what this app just did, and why?*
 - Guardrail Engine: safety floor, user-configurable rules, category
   defaults, and an audit log entry for every decision.
 - `MeshManager`: the single choke point between the radio and the app.
-- Durable storage for the audit log and verified-peer decisions, with
-  atomic writes, corruption recovery, and fail-closed trust loading.
+- Durable storage for the audit log, verified-peer decisions, and shared
+  lists, with atomic writes, corruption recovery, and fail-closed trust
+  loading.
+- Shared lists that merge correctly after devices edit them while apart,
+  with convergence verified by property tests.
 - Bluetooth LE transport: symmetric scan/advertise, GATT client and server,
   serialised writes, MTU negotiation.
 - UI: onboarding, nearby devices, chat, audit log, and policy settings.
@@ -62,7 +65,7 @@ what this app just did, and why?*
 - Conversation history is not persisted — messages are lost when the app
   is killed. The audit log and trust decisions now survive.
 - Encryption at rest for stored data (see docs/adr/0002-storage.md).
-- File transfer, shared lists, and capability advertisement.
+- File transfer and capability advertisement.
 - QR-code verification (fingerprints are compared manually today).
 - A foreground service, so the mesh stops when the app is backgrounded.
 - Wi-Fi Direct/Aware transport.
@@ -111,6 +114,7 @@ proximity-os/
 │       ├── domain/     # Peer, ChatMessage, Conversation
 │       ├── guardrail/  # engine, rules, policy catalog, audit log
 │       ├── identity/   # device identity, trust store
+│       ├── lists/      # shared list CRDT and repository
 │       ├── mesh/       # MeshTransport interface, MeshManager
 │       ├── protocol/   # framing, chunking, envelopes
 │       └── session/    # handshake, transcripts
@@ -150,6 +154,7 @@ powershell -ExecutionPolicy Bypass -File tools/verify-shared.ps1
 - [Guardrail policy design](docs/GUARDRAIL_POLICY.md)
 - [ADR 0001 — Cryptography](docs/adr/0001-cryptography.md)
 - [ADR 0002 — Local storage](docs/adr/0002-storage.md)
+- [ADR 0003 — Shared lists](docs/adr/0003-shared-lists.md)
 - [Changelog](docs/CHANGELOG.md)
 
 ## License

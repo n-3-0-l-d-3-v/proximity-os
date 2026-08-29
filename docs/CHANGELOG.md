@@ -76,7 +76,8 @@ listed here — this tracks meaningful progress, not every file touched.
 
 ### Known gaps at the end of this phase
 
-- Nothing is persisted; all state is lost when the app is killed.
+- Conversation history is not persisted; the audit log and trust decisions
+  now survive restarts, chat messages do not.
 - Messages travel one hop only — no relay or store-and-forward.
 - Never run between two physical phones; BLE behaviour is unproven.
 - No foreground service, so the mesh stops when the app is backgrounded.
