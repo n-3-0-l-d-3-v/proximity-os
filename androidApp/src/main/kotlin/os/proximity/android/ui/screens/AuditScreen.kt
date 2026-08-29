@@ -127,6 +127,8 @@ private fun describeAction(action: ActionType, direction: RequestDirection): Str
         ActionType.ADVERTISE_CAPABILITY -> "Tell nearby devices what you offer"
         ActionType.REQUEST_CAPABILITY -> "Ask a device for something it offers"
         ActionType.RELAY_MESSAGE -> "Carry a message for someone else"
+        ActionType.SYNC_LIST ->
+            if (inbound) "Receive a shared list update" else "Share a list update"
         ActionType.LEAVE_MESH -> "Send data outside the local mesh"
         ActionType.EXECUTE_CODE -> "Run code sent by another device"
     }
