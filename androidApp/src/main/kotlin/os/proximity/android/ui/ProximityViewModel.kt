@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import os.proximity.android.data.AppSettings
 import os.proximity.shared.domain.Conversation
+import os.proximity.shared.domain.ConversationStore
 import os.proximity.shared.domain.Peer
 import os.proximity.shared.guardrail.AuditLog
 import os.proximity.shared.guardrail.AuditLogEntry
@@ -34,6 +35,7 @@ class ProximityViewModel(
     private val auditLog: AuditLog,
     private val identityProvider: DeviceIdentityProvider,
     private val listRepository: SharedListRepository,
+    private val conversationStore: ConversationStore,
     val mesh: MeshManager
 ) : ViewModel() {
 
@@ -61,6 +63,13 @@ class ProximityViewModel(
     init {
         mesh.start()
         applyEnabledPolicies()
+
+        viewModelScope.launch {
+            mesh.restoreConversations(conversationStore.load())
+            // Persist afterwards, so the restore itself does not race with a
+            // save of the still-empty in-memory state.
+            mesh.conversations.collect { conversationStore.save(it) }
+        }
 
         viewModelScope.launch {
             myFingerprint = runCatching { identityProvider.getOrCreateIdentity().fingerprint }
@@ -179,12 +188,14 @@ class ProximityViewModel(
         private val auditLog: AuditLog,
         private val identityProvider: DeviceIdentityProvider,
         private val listRepository: SharedListRepository,
+        private val conversationStore: ConversationStore,
         private val mesh: MeshManager
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             ProximityViewModel(
-                settings, engine, auditLog, identityProvider, listRepository, mesh
+                settings, engine, auditLog, identityProvider, listRepository,
+                conversationStore, mesh
             ) as T
     }
 }

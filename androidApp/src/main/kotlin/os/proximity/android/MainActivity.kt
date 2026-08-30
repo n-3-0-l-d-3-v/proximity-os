@@ -16,6 +16,7 @@ import os.proximity.android.mesh.BleMeshTransport
 import os.proximity.android.ui.ProximityApp
 import os.proximity.android.ui.ProximityViewModel
 import os.proximity.shared.crypto.AndroidCryptoPrimitives
+import os.proximity.shared.domain.FileConversationStore
 import os.proximity.shared.guardrail.DefaultGuardrailEngine
 import os.proximity.shared.guardrail.FileAuditLog
 import os.proximity.shared.identity.FileTrustStore
@@ -44,6 +45,7 @@ class MainActivity : ComponentActivity() {
         val fileStore = AndroidFileStore(applicationContext)
         val auditLog = FileAuditLog(fileStore)
         val trustStore = FileTrustStore(fileStore)
+        val conversationStore = FileConversationStore(fileStore)
         val guardrailEngine = DefaultGuardrailEngine(auditLog)
         val identityProvider = KeystoreDeviceIdentityProvider()
         val listRepository = SharedListRepository(
@@ -80,6 +82,7 @@ class MainActivity : ComponentActivity() {
                 auditLog = auditLog,
                 identityProvider = identityProvider,
                 listRepository = listRepository,
+                conversationStore = conversationStore,
                 mesh = meshManager
             )
         )[ProximityViewModel::class.java]
