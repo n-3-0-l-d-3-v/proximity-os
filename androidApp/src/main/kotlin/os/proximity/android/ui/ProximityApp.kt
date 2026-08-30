@@ -1,6 +1,8 @@
 package os.proximity.android.ui
 
+import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -118,8 +120,24 @@ private fun MainScaffold(viewModel: ProximityViewModel, displayName: String) {
     // Doing it the other way round would let the service outlive the
     // preference that authorised it.
     val serviceContext = LocalContext.current
+
+    // On Android 13+ the ongoing notification needs permission. That
+    // notification *is* the disclosure that the radio is running, so it is
+    // requested when the user opts in rather than treated as cosmetic.
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
     LaunchedEffect(runInBackground) {
         if (runInBackground) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(
+                    serviceContext,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
             MeshForegroundService.start(serviceContext)
         } else {
             MeshForegroundService.stop(serviceContext)

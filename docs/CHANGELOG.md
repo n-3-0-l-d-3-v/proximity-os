@@ -136,3 +136,19 @@ listed here — this tracks meaningful progress, not every file touched.
   of messages per peer. Restored conversations are always marked offline —
   reachability is a fact about right now, not something to restore from a
   file.
+
+**Background operation**
+
+- The object graph moved from the Activity to the Application, so the mesh
+  can outlive any single screen. The service and the UI share one
+  `MeshManager` — two would mean two identities on the air and two
+  conflicting views of the same peers.
+- Added an **opt-in** foreground service. Android would allow starting it
+  automatically, but an app whose pitch is "default deny, and you can see
+  everything it does" should not quietly hold the Bluetooth radio open. The
+  user turns it on, and the notification says plainly what is happening.
+- The service uses `START_NOT_STICKY`: if the system kills it, staying
+  stopped is more honest than silently resuming the radios.
+- On Android 13+, notification permission is requested when the user opts
+  in, because that notification *is* the disclosure that the radio is
+  running.
