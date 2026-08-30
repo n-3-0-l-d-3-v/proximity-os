@@ -675,6 +675,25 @@ class MeshManager(
         sendEnvelope(context, Envelope.Ack(chat.messageId), FrameType.SEALED, session)
     }
 
+    // --------------------------------------------------------- restoration
+
+    /**
+     * Seeds conversations loaded from disk.
+     *
+     * Restored conversations are marked offline regardless of what was
+     * stored: being reachable is a fact about right now, and showing a peer
+     * as connected because they were last time would be a lie the user
+     * might act on.
+     */
+    fun restoreConversations(restored: Map<String, Conversation>) {
+        val merged = restored.mapValues { (id, conversation) ->
+            // Anything already learned in this session wins; restoration must
+            // never clobber a live conversation.
+            conversationsState.value[id] ?: conversation.copy(isOnline = false)
+        }
+        conversationsState.value = merged + conversationsState.value
+    }
+
     // ---------------------------------------------------------------- trust
 
     suspend fun markVerified(deviceId: String) {

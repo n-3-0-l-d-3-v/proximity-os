@@ -1,5 +1,6 @@
 package os.proximity.shared.domain
 
+import kotlinx.serialization.Serializable
 import os.proximity.shared.guardrail.TrustState
 
 /** How far along we are with a nearby device. */
@@ -48,10 +49,13 @@ data class Peer(
     val isSecured: Boolean get() = linkState == LinkState.SECURED
 }
 
+@Serializable
 enum class MessageDirection { SENT, RECEIVED }
 
+@Serializable
 enum class DeliveryState { PENDING, SENT, DELIVERED, FAILED }
 
+@Serializable
 data class ChatMessage(
     val id: String,
     val peerDeviceId: String,
@@ -62,6 +66,7 @@ data class ChatMessage(
 )
 
 /** A pairwise conversation, keyed by the peer's cryptographic device ID. */
+@Serializable
 data class Conversation(
     val peerDeviceId: String,
     val peerLabel: String,
