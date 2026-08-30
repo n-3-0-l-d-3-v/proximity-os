@@ -3,6 +3,7 @@ package os.proximity.shared.protocol
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import os.proximity.shared.capability.CapabilityAdvertisement
 import os.proximity.shared.lists.ListOperation
 import os.proximity.shared.lists.SharedList
 
@@ -80,12 +81,14 @@ sealed class Envelope {
     @SerialName("list_sync")
     data class ListSync(val lists: List<SharedList>) : Envelope()
 
-    /** A short-lived capability this device is offering to the mesh. */
+    /**
+     * What this device currently offers to do for the peer. A claim about
+     * willingness, never a grant of permission — see the capability package.
+     */
     @Serializable
     @SerialName("capability")
     data class CapabilityAdvert(
-        val capability: String,
-        val expiresAtEpochMillis: Long
+        val advertisement: CapabilityAdvertisement
     ) : Envelope()
 
     companion object {

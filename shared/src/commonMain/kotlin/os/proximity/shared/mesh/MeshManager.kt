@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import os.proximity.shared.capability.CapabilityAdvertisement
 import os.proximity.shared.crypto.CryptoPrimitives
 import os.proximity.shared.crypto.SecureSession
 import os.proximity.shared.domain.ChatMessage
@@ -83,7 +84,9 @@ class MeshManager(
     private val scope: CoroutineScope,
     private val displayName: () -> String,
     /** Optional: when absent, list traffic is simply not carried. */
-    private val listSync: ListSyncDelegate? = null
+    private val listSync: ListSyncDelegate? = null,
+    /** Optional: when absent, no capabilities are offered or recorded. */
+    private val capabilities: CapabilityDelegate? = null
 ) {
 
     private val mutex = Mutex()
@@ -400,6 +403,47 @@ class MeshManager(
         return delivered
     }
 
+    private suspend fun sendCapabilities(context: LinkContext, session: SecureSession) {
+        val delegate = capabilities ?: return
+        // Null when the user has enabled nothing: staying silent is more
+        // private than announcing an empty offer.
+        val advertisement = delegate.buildAdvertisement() ?: return
+
+        val decision = guardrail.evaluate(
+            GuardrailRequest(
+                direction = RequestDirection.OUTBOUND,
+                actionType = ActionType.ADVERTISE_CAPABILITY,
+                peer = PeerContext(
+                    session.peerDeviceId,
+                    trustStore.trustStateOf(session.peerDeviceId)
+                )
+            )
+        )
+        if (decision !is GuardrailDecision.Allow) return
+
+        sendEnvelope(context, Envelope.CapabilityAdvert(advertisement), FrameType.SEALED, session)
+    }
+
+    private suspend fun onCapabilityAdvert(
+        session: SecureSession,
+        advertisement: CapabilityAdvertisement
+    ) {
+        val delegate = capabilities ?: return
+        val decision = guardrail.evaluate(
+            GuardrailRequest(
+                direction = RequestDirection.INBOUND,
+                actionType = ActionType.ADVERTISE_CAPABILITY,
+                peer = PeerContext(
+                    session.peerDeviceId,
+                    trustStore.trustStateOf(session.peerDeviceId)
+                )
+            )
+        )
+        if (decision !is GuardrailDecision.Allow) return
+
+        delegate.onPeerAdvertisement(session.peerDeviceId, advertisement)
+    }
+
     private suspend fun sendListSnapshots(context: LinkContext, session: SecureSession) {
         val delegate = listSync ?: return
         val snapshots = delegate.snapshotsForSync()
@@ -608,6 +652,9 @@ class MeshManager(
                 // while either side edited, and the merge is what reconciles
                 // those divergent histories.
                 sendListSnapshots(context, session)
+
+                // Tell the peer what we are willing to be asked for.
+                sendCapabilities(context, session)
             }
         }
     }
@@ -634,6 +681,8 @@ class MeshManager(
             }
 
             is Envelope.ListOp, is Envelope.ListSync -> onListTraffic(session, envelope)
+
+            is Envelope.CapabilityAdvert -> onCapabilityAdvert(session, envelope.advertisement)
             // Remaining envelope kinds arrive in later phases; ignoring them
             // is the default-deny position, not an oversight.
             else -> Unit
