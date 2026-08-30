@@ -115,3 +115,24 @@ listed here — this tracks meaningful progress, not every file touched.
   state. A peer that dropped and reconnected sends a fresh `Hello`, which
   was previously mistaken for a reply to our own in-flight handshake,
   leaving both sides stuck.
+
+**Capabilities**
+
+- Devices advertise short-lived capabilities describing what they are
+  willing to be asked for. A capability is a **claim, not a grant**:
+  advertising "I accept files" confers nothing on the asker, and every
+  actual request still goes through the Guardrail Engine.
+- Only capabilities the user explicitly enabled are ever advertised.
+- Advertisements expire, so a device that walks away stops appearing to
+  offer things rather than lingering in everyone's list.
+- Peer-supplied capability names are filtered against a known catalog, so a
+  peer cannot put arbitrary text in front of the user, and peer-supplied
+  expiry times are capped.
+- Capability toggles added to the Rules screen.
+
+**Persistence**
+
+- Conversation history now survives restarts, trimmed to a bounded number
+  of messages per peer. Restored conversations are always marked offline —
+  reachability is a fact about right now, not something to restore from a
+  file.

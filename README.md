@@ -55,6 +55,9 @@ what this app just did, and why?*
   loading.
 - Shared lists that merge correctly after devices edit them while apart,
   with convergence verified by property tests.
+- Short-lived capability advertisement, filtered and expiry-capped on
+  receipt.
+- Conversation history that survives restarts, with bounded retention.
 - Bluetooth LE transport: symmetric scan/advertise, GATT client and server,
   serialised writes, MTU negotiation.
 - UI: onboarding, nearby devices, chat, audit log, and policy settings.
@@ -62,10 +65,8 @@ what this app just did, and why?*
 **Not built yet**
 
 - Multi-hop relay and store-and-forward (messages only travel one hop).
-- Conversation history is not persisted — messages are lost when the app
-  is killed. The audit log and trust decisions now survive.
 - Encryption at rest for stored data (see docs/adr/0002-storage.md).
-- File transfer and capability advertisement.
+- File transfer.
 - QR-code verification (fingerprints are compared manually today).
 - A foreground service, so the mesh stops when the app is backgrounded.
 - Wi-Fi Direct/Aware transport.
@@ -110,6 +111,7 @@ tested code.
 proximity-os/
 ├── shared/          # KMP core
 │   └── src/commonMain/kotlin/os/proximity/shared/
+│       ├── capability/ # what a device offers, and for how long
 │       ├── crypto/     # primitives interface, HKDF, SecureSession
 │       ├── domain/     # Peer, ChatMessage, Conversation
 │       ├── guardrail/  # engine, rules, policy catalog, audit log
