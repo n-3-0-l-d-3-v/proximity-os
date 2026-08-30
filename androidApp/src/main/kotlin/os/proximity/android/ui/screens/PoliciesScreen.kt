@@ -27,14 +27,18 @@ import androidx.compose.ui.unit.dp
 import os.proximity.android.data.AppSettings
 import os.proximity.android.ui.components.SectionHeader
 import os.proximity.android.ui.theme.LocalDecisionColors
+import os.proximity.shared.capability.CapabilityCatalog
+import os.proximity.shared.capability.CapabilityDefinition
 import os.proximity.shared.guardrail.PolicyCatalog
 import os.proximity.shared.guardrail.PolicyOption
 
 @Composable
 fun PoliciesScreen(
     enabledIds: Set<String>,
+    enabledCapabilities: Set<String>,
     displayName: String,
     onToggle: (String, Boolean) -> Unit,
+    onToggleCapability: (String, Boolean) -> Unit,
     onDisplayNameChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -60,6 +64,24 @@ fun PoliciesScreen(
                 option = option,
                 enabled = option.id in enabledIds,
                 onToggle = { onToggle(option.id, it) }
+            )
+        }
+
+        item { SectionHeader("What you offer nearby devices") }
+        item {
+            Text(
+                "These say what you are willing to be asked for. They are not permissions — " +
+                    "every actual request still goes through your rules above.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+            )
+        }
+        items(CapabilityCatalog.definitions, key = { "cap-${it.name}" }) { definition ->
+            CapabilityRow(
+                definition = definition,
+                enabled = definition.name in enabledCapabilities,
+                onToggle = { onToggleCapability(definition.name, it) }
             )
         }
 
@@ -125,6 +147,43 @@ private fun PolicyRow(option: PolicyOption, enabled: Boolean, onToggle: (Boolean
                 Spacer(Modifier.height(4.dp))
                 Text(
                     option.explanation,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.padding(horizontal = 6.dp))
+            Switch(checked = enabled, onCheckedChange = onToggle)
+        }
+    }
+}
+
+@Composable
+private fun CapabilityRow(
+    definition: CapabilityDefinition,
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    definition.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    definition.explanation,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

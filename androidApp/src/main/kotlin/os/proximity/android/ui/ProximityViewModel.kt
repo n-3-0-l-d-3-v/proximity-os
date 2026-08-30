@@ -9,6 +9,8 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import os.proximity.android.data.AppSettings
+import os.proximity.shared.capability.Capability
+import os.proximity.shared.capability.CapabilityRegistry
 import os.proximity.shared.domain.Conversation
 import os.proximity.shared.domain.ConversationStore
 import os.proximity.shared.domain.Peer
@@ -36,6 +38,7 @@ class ProximityViewModel(
     private val identityProvider: DeviceIdentityProvider,
     private val listRepository: SharedListRepository,
     private val conversationStore: ConversationStore,
+    private val capabilities: CapabilityRegistry,
     val mesh: MeshManager
 ) : ViewModel() {
 
@@ -47,6 +50,8 @@ class ProximityViewModel(
     val hasOnboarded: StateFlow<Boolean> = settings.hasOnboarded
     val enabledPolicyIds: StateFlow<Set<String>> = settings.enabledPolicyIds
     val lists: StateFlow<Map<String, SharedList>> = listRepository.lists
+    val enabledCapabilities: StateFlow<Set<String>> = capabilities.enabled
+    val peerCapabilities: StateFlow<Map<String, List<Capability>>> = capabilities.peerCapabilities
 
     /** A Guardrail "ask me" decision currently blocking the mesh. */
     var pendingDecision by mutableStateOf<MeshEvent.DecisionRequired?>(null)
@@ -163,6 +168,15 @@ class ProximityViewModel(
         viewModelScope.launch { mesh.revokeVerification(deviceId) }
     }
 
+    // ----------------------------------------------------------- capabilities
+
+    fun setCapabilityEnabled(name: String, enabled: Boolean) {
+        viewModelScope.launch { capabilities.setEnabled(name, enabled) }
+    }
+
+    /** What a peer currently offers, expired claims excluded. */
+    fun capabilitiesOf(deviceId: String): List<Capability> = capabilities.capabilitiesOf(deviceId)
+
     // -------------------------------------------------------------- settings
 
     fun setDisplayName(name: String) = settings.setDisplayName(name)
@@ -189,13 +203,14 @@ class ProximityViewModel(
         private val identityProvider: DeviceIdentityProvider,
         private val listRepository: SharedListRepository,
         private val conversationStore: ConversationStore,
+        private val capabilities: CapabilityRegistry,
         private val mesh: MeshManager
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             ProximityViewModel(
                 settings, engine, auditLog, identityProvider, listRepository,
-                conversationStore, mesh
+                conversationStore, capabilities, mesh
             ) as T
     }
 }

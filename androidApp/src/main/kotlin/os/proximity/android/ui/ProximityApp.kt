@@ -109,6 +109,7 @@ private fun MainScaffold(viewModel: ProximityViewModel, displayName: String) {
     val isScanning by viewModel.isScanning.collectAsState()
     val enabledPolicies by viewModel.enabledPolicyIds.collectAsState()
     val lists by viewModel.lists.collectAsState()
+    val enabledCapabilities by viewModel.enabledCapabilities.collectAsState()
 
     val openConversation = openChatDeviceId?.let { conversations[it] }
     val openList = openListId?.let { lists[it] }
@@ -206,8 +207,10 @@ private fun MainScaffold(viewModel: ProximityViewModel, displayName: String) {
 
                 tab == Tab.RULES -> PoliciesScreen(
                     enabledIds = enabledPolicies,
+                    enabledCapabilities = enabledCapabilities,
                     displayName = displayName,
                     onToggle = viewModel::setPolicyEnabled,
+                    onToggleCapability = viewModel::setCapabilityEnabled,
                     onDisplayNameChange = viewModel::setDisplayName
                 )
             }
