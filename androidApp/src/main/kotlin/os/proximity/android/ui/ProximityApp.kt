@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import os.proximity.android.service.MeshForegroundService
 import os.proximity.android.ui.components.Banner
 import os.proximity.android.ui.screens.AuditScreen
 import os.proximity.android.ui.screens.ChatScreen
@@ -110,6 +112,19 @@ private fun MainScaffold(viewModel: ProximityViewModel, displayName: String) {
     val enabledPolicies by viewModel.enabledPolicyIds.collectAsState()
     val lists by viewModel.lists.collectAsState()
     val enabledCapabilities by viewModel.enabledCapabilities.collectAsState()
+    val runInBackground by viewModel.runInBackground.collectAsState()
+
+    // The setting is the single source of truth; the service follows it.
+    // Doing it the other way round would let the service outlive the
+    // preference that authorised it.
+    val serviceContext = LocalContext.current
+    LaunchedEffect(runInBackground) {
+        if (runInBackground) {
+            MeshForegroundService.start(serviceContext)
+        } else {
+            MeshForegroundService.stop(serviceContext)
+        }
+    }
 
     val openConversation = openChatDeviceId?.let { conversations[it] }
     val openList = openListId?.let { lists[it] }
@@ -208,9 +223,11 @@ private fun MainScaffold(viewModel: ProximityViewModel, displayName: String) {
                 tab == Tab.RULES -> PoliciesScreen(
                     enabledIds = enabledPolicies,
                     enabledCapabilities = enabledCapabilities,
+                    runInBackground = runInBackground,
                     displayName = displayName,
                     onToggle = viewModel::setPolicyEnabled,
                     onToggleCapability = viewModel::setCapabilityEnabled,
+                    onRunInBackgroundChange = viewModel::setRunInBackground,
                     onDisplayNameChange = viewModel::setDisplayName
                 )
             }

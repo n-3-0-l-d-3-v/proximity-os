@@ -51,6 +51,7 @@ class ProximityViewModel(
     val enabledPolicyIds: StateFlow<Set<String>> = settings.enabledPolicyIds
     val lists: StateFlow<Map<String, SharedList>> = listRepository.lists
     val enabledCapabilities: StateFlow<Set<String>> = capabilities.enabled
+    val runInBackground: StateFlow<Boolean> = settings.runInBackground
     val peerCapabilities: StateFlow<Map<String, List<Capability>>> = capabilities.peerCapabilities
 
     /** A Guardrail "ask me" decision currently blocking the mesh. */
@@ -180,6 +181,8 @@ class ProximityViewModel(
     // -------------------------------------------------------------- settings
 
     fun setDisplayName(name: String) = settings.setDisplayName(name)
+
+    fun setRunInBackground(value: Boolean) = settings.setRunInBackground(value)
 
     fun completeOnboarding() = settings.setOnboarded(true)
 

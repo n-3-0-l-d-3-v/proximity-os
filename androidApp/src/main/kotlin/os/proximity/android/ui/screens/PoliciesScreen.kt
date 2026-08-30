@@ -36,9 +36,11 @@ import os.proximity.shared.guardrail.PolicyOption
 fun PoliciesScreen(
     enabledIds: Set<String>,
     enabledCapabilities: Set<String>,
+    runInBackground: Boolean,
     displayName: String,
     onToggle: (String, Boolean) -> Unit,
     onToggleCapability: (String, Boolean) -> Unit,
+    onRunInBackgroundChange: (Boolean) -> Unit,
     onDisplayNameChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -82,6 +84,18 @@ fun PoliciesScreen(
                 definition = definition,
                 enabled = definition.name in enabledCapabilities,
                 onToggle = { onToggleCapability(definition.name, it) }
+            )
+        }
+
+        item { SectionHeader("Running in the background") }
+        item {
+            SimpleToggleRow(
+                title = "Keep the mesh running when I leave the app",
+                explanation = "Off by default. Turned on, Proximity OS keeps looking for " +
+                    "nearby devices with a notification showing, and uses more battery. " +
+                    "Turned off, it only runs while you have the app open.",
+                enabled = runInBackground,
+                onToggle = onRunInBackgroundChange
             )
         }
 
@@ -184,6 +198,44 @@ private fun CapabilityRow(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     definition.explanation,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.padding(horizontal = 6.dp))
+            Switch(checked = enabled, onCheckedChange = onToggle)
+        }
+    }
+}
+
+@Composable
+private fun SimpleToggleRow(
+    title: String,
+    explanation: String,
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    explanation,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

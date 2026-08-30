@@ -45,6 +45,22 @@ class AppSettings(context: Context) {
     )
     val enabledPolicyIds: StateFlow<Set<String>> = enabledPoliciesState
 
+    private val backgroundState = MutableStateFlow(prefs.getBoolean(KEY_BACKGROUND, false))
+
+    /**
+     * Whether the mesh keeps running when the app is not in front.
+     *
+     * Off by default and deliberately so: holding the Bluetooth radio open
+     * in the background is exactly the kind of thing this app tells users it
+     * will not do without asking.
+     */
+    val runInBackground: StateFlow<Boolean> = backgroundState
+
+    fun setRunInBackground(value: Boolean) {
+        prefs.edit().putBoolean(KEY_BACKGROUND, value).apply()
+        backgroundState.value = value
+    }
+
     fun setPolicyEnabled(id: String, enabled: Boolean) {
         val updated = if (enabled) {
             enabledPoliciesState.value + id
@@ -60,6 +76,7 @@ class AppSettings(context: Context) {
         private const val KEY_DISPLAY_NAME = "display_name"
         private const val KEY_ONBOARDED = "has_onboarded"
         private const val KEY_ENABLED_POLICIES = "enabled_policies"
+        private const val KEY_BACKGROUND = "run_in_background"
         private const val DEFAULT_DISPLAY_NAME = "Someone nearby"
         const val MAX_NAME_LENGTH = 24
     }
